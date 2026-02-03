@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(tree:*)",
+      "Bash(ls:*)",
+      "Bash(dir:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test)",
+      "Bash(dotnet test:*)",
+      "Bash(findstr:*)",
+      "Bash(Get-ChildItem -Recurse \"C:\\\\Code\\\\_personal\\\\Gyurma\\\\tests\\\\Gyurma.Tests\\\\obj\" -Filter \"*.cs\")",
+      "Bash(Select-Object FullName)"
+    ]
+  }
+}
