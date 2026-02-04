@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -97,19 +98,19 @@ public class GyurmaGenerator : IIncrementalGenerator
 
             if (m.Parameters.Length == 0)
             {
-                sb.AppendLine($"    private {delegateType}? _setup_{m.Name};");
+                sb.AppendLine($"    private {delegateType}? {MethodFieldName(m)};");
             }
             else
             {
                 var keyType = TupleType(m.Parameters);
-                sb.AppendLine($"    private readonly Dictionary<{keyType}, {delegateType}> _setup_{m.Name} = new();");
+                sb.AppendLine($"    private readonly Dictionary<{keyType}, {delegateType}> {MethodFieldName(m)} = new();");
             }
         }
 
         // Fields for each property
         foreach (var p in properties)
         {
-            sb.AppendLine($"    private Func<{FullTypeName(p.Type)}>? _setup_{p.Name};");
+            sb.AppendLine($"    private Func<{FullTypeName(p.Type)}>? {PropertyFieldName(p)};");
         }
 
         // Fields for each indexer
@@ -147,17 +148,17 @@ public class GyurmaGenerator : IIncrementalGenerator
 
             if (m.Parameters.Length == 0)
             {
-                sb.AppendLine($"        if (_setup_{m.Name} == null)");
+                sb.AppendLine($"        if ({MethodFieldName(m)} == null)");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
-                    sb.AppendLine($"        _setup_{m.Name}();");
+                    sb.AppendLine($"        {MethodFieldName(m)}();");
                 else
-                    sb.AppendLine($"        return _setup_{m.Name}();");
+                    sb.AppendLine($"        return {MethodFieldName(m)}();");
             }
             else
             {
                 var keyExpr = TupleExpr(m.Parameters);
-                sb.AppendLine($"        if (!_setup_{m.Name}.TryGetValue({keyExpr}, out var impl))");
+                sb.AppendLine($"        if (!{MethodFieldName(m)}.TryGetValue({keyExpr}, out var impl))");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
                     sb.AppendLine($"        impl();");
@@ -181,9 +182,9 @@ public class GyurmaGenerator : IIncrementalGenerator
                 sb.AppendLine("    {");
                 sb.AppendLine("        get");
                 sb.AppendLine("        {");
-                sb.AppendLine($"            if (_setup_{p.Name} == null)");
+                sb.AppendLine($"            if ({PropertyFieldName(p)} == null)");
                 sb.AppendLine($"                throw new NotImplementedException();");
-                sb.AppendLine($"            return _setup_{p.Name}();");
+                sb.AppendLine($"            return {PropertyFieldName(p)}();");
                 sb.AppendLine("        }");
                 sb.AppendLine($"        set {{ }}");
                 sb.AppendLine("    }");
@@ -194,9 +195,9 @@ public class GyurmaGenerator : IIncrementalGenerator
                 sb.AppendLine("    {");
                 sb.AppendLine("        get");
                 sb.AppendLine("        {");
-                sb.AppendLine($"            if (_setup_{p.Name} == null)");
+                sb.AppendLine($"            if ({PropertyFieldName(p)} == null)");
                 sb.AppendLine($"                throw new NotImplementedException();");
-                sb.AppendLine($"            return _setup_{p.Name}();");
+                sb.AppendLine($"            return {PropertyFieldName(p)}();");
                 sb.AppendLine("        }");
                 sb.AppendLine("    }");
             }
@@ -253,24 +254,24 @@ public class GyurmaGenerator : IIncrementalGenerator
             {
                 if (m.Parameters.Length == 0)
                 {
-                    sb.AppendLine($"            return new VoidMethodSetup(a => _mock._setup_{m.Name} = a);");
+                    sb.AppendLine($"            return new VoidMethodSetup(__impl => _mock.{MethodFieldName(m)} = __impl);");
                 }
                 else
                 {
                     var keyExpr = TupleExpr(m.Parameters);
-                    sb.AppendLine($"            return new VoidMethodSetup(a => _mock._setup_{m.Name}[{keyExpr}] = a);");
+                    sb.AppendLine($"            return new VoidMethodSetup(__impl => _mock.{MethodFieldName(m)}[{keyExpr}] = __impl);");
                 }
             }
             else
             {
                 if (m.Parameters.Length == 0)
                 {
-                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(f => _mock._setup_{m.Name} = f);");
+                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(__impl => _mock.{MethodFieldName(m)} = __impl);");
                 }
                 else
                 {
                     var keyExpr = TupleExpr(m.Parameters);
-                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(f => _mock._setup_{m.Name}[{keyExpr}] = f);");
+                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(__impl => _mock.{MethodFieldName(m)}[{keyExpr}] = __impl);");
                 }
             }
 
@@ -282,7 +283,7 @@ public class GyurmaGenerator : IIncrementalGenerator
         {
             var setupReturn = $"IMethodSetup<{FullTypeName(p.Type)}>";
             sb.AppendLine($"        public {setupReturn} {p.Name} =>");
-            sb.AppendLine($"            new MethodSetup<{FullTypeName(p.Type)}>(f => _mock._setup_{p.Name} = f);");
+            sb.AppendLine($"            new MethodSetup<{FullTypeName(p.Type)}>(f => _mock.{PropertyFieldName(p)} = f);");
             sb.AppendLine();
         }
 
@@ -312,8 +313,31 @@ public class GyurmaGenerator : IIncrementalGenerator
             ? $"({FullTypeName(parameters[0].Type)}, byte)"
             : $"({string.Join(", ", parameters.Select(p => FullTypeName(p.Type)))})";
 
+    // Converts type name to valid C# identifier by replacing invalid chars with underscores
+    private static string SanitizeForIdentifier(string name) =>
+        Regex.Replace(name, @"[^a-zA-Z0-9_]", "_");
+
+    // Generates a unique signature string for a method based on its parameter types
+    // Returns empty string for parameterless methods, otherwise "_Type1_Type2_..."
+    private static string GetMethodSignature(IMethodSymbol method) =>
+        method.Parameters.Length == 0
+            ? ""
+            : "_" + string.Join("_", method.Parameters.Select(p => SanitizeForIdentifier(FullTypeName(p.Type))));
+
+    // Generates the internal field name for storing a method's setup delegate
+    private static string MethodFieldName(IMethodSymbol method) =>
+        $"_setup_{method.Name}{GetMethodSignature(method)}";
+
+    // Properties cannot be overloaded, so no signature needed - just the name
+    private static string PropertyFieldName(IPropertySymbol property) =>
+        $"_setup_{property.Name}";
+
+    // Generates a unique signature string for an indexer based on its parameter types
+    private static string GetIndexerSignature(IPropertySymbol indexer) =>
+        string.Join("_", indexer.Parameters.Select(p => SanitizeForIdentifier(FullTypeName(p.Type))));
+
     private static string IndexerFieldName(IPropertySymbol indexer) =>
-        "_setup_Indexer_" + string.Join("_", indexer.Parameters.Select(p => p.Type.Name));
+        $"_setup_Indexer_{GetIndexerSignature(indexer)}";
 
     private static string TupleExpr(ImmutableArray<IParameterSymbol> parameters) =>
         parameters.Length == 1
