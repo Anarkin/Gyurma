@@ -10,7 +10,14 @@
       "Bash(dotnet test:*)",
       "Bash(findstr:*)",
       "Bash(Get-ChildItem -Recurse \"C:\\\\Code\\\\_personal\\\\Gyurma\\\\tests\\\\Gyurma.Tests\\\\obj\" -Filter \"*.cs\")",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "WebFetch(domain:github.com)"
+    ]
+  },
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "⌛"
     ]
   }
 }
