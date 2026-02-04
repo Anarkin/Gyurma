@@ -11,4 +11,6 @@ public class VoidMethodSetup : IVoidMethodSetup
     }
 
     public void Throws<TException>() where TException : Exception, new() => _register(() => throw new TException());
+
+    public void Throws(Exception exception) => _register(() => throw exception);
 }

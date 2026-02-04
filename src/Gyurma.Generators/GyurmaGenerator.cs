@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
@@ -79,6 +80,24 @@ public class GyurmaGenerator : IIncrementalGenerator
             ? type.GetMembers().OfType<IPropertySymbol>().Where(p => p.IsIndexer).ToList()
             : type.GetMembers().OfType<IPropertySymbol>().Where(p => p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
 
+        // Calculate unique field names for methods
+        var methodFields = new Dictionary<IMethodSymbol, string>(SymbolEqualityComparer.Default);
+        foreach (var group in methods.GroupBy(m => m.Name))
+        {
+            if (group.Count() == 1)
+            {
+                methodFields[group.First()] = $"_setup_{group.First().Name}";
+            }
+            else
+            {
+                int i = 0;
+                foreach (var m in group)
+                {
+                    methodFields[m] = $"_setup_{m.Name}_{i++}";
+                }
+            }
+        }
+
         sb.AppendLine("#nullable enable");
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
@@ -94,15 +113,16 @@ public class GyurmaGenerator : IIncrementalGenerator
         {
             var isVoid = m.ReturnType.SpecialType == SpecialType.System_Void;
             var delegateType = isVoid ? "Action" : $"Func<{FullTypeName(m.ReturnType)}>";
+            var fieldName = methodFields[m];
 
             if (m.Parameters.Length == 0)
             {
-                sb.AppendLine($"    private {delegateType}? _setup_{m.Name};");
+                sb.AppendLine($"    private {delegateType}? {fieldName};");
             }
             else
             {
                 var keyType = TupleType(m.Parameters);
-                sb.AppendLine($"    private readonly Dictionary<{keyType}, {delegateType}> _setup_{m.Name} = new();");
+                sb.AppendLine($"    private readonly Dictionary<{keyType}, {delegateType}> {fieldName} = new();");
             }
         }
 
@@ -140,6 +160,7 @@ public class GyurmaGenerator : IIncrementalGenerator
             var isVoid = m.ReturnType.SpecialType == SpecialType.System_Void;
             var returnType = isVoid ? "void" : FullTypeName(m.ReturnType);
             var paramList = string.Join(", ", m.Parameters.Select(p => $"{FullTypeName(p.Type)} {p.Name}"));
+            var fieldName = methodFields[m];
 
             var modifier = isClass ? "public override" : "public";
             sb.AppendLine($"    {modifier} {returnType} {m.Name}({paramList})");
@@ -147,17 +168,17 @@ public class GyurmaGenerator : IIncrementalGenerator
 
             if (m.Parameters.Length == 0)
             {
-                sb.AppendLine($"        if (_setup_{m.Name} == null)");
+                sb.AppendLine($"        if ({fieldName} == null)");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
-                    sb.AppendLine($"        _setup_{m.Name}();");
+                    sb.AppendLine($"        {fieldName}();");
                 else
-                    sb.AppendLine($"        return _setup_{m.Name}();");
+                    sb.AppendLine($"        return {fieldName}();");
             }
             else
             {
                 var keyExpr = TupleExpr(m.Parameters);
-                sb.AppendLine($"        if (!_setup_{m.Name}.TryGetValue({keyExpr}, out var impl))");
+                sb.AppendLine($"        if (!{fieldName}.TryGetValue({keyExpr}, out var impl))");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
                     sb.AppendLine($"        impl();");
@@ -245,6 +266,7 @@ public class GyurmaGenerator : IIncrementalGenerator
             var isVoid = m.ReturnType.SpecialType == SpecialType.System_Void;
             var setupReturn = isVoid ? "IVoidMethodSetup" : $"IMethodSetup<{FullTypeName(m.ReturnType)}>";
             var paramList = string.Join(", ", m.Parameters.Select(p => $"{FullTypeName(p.Type)} {p.Name}"));
+            var fieldName = methodFields[m];
 
             sb.AppendLine($"        public {setupReturn} {m.Name}({paramList})");
             sb.AppendLine("        {");
@@ -253,24 +275,24 @@ public class GyurmaGenerator : IIncrementalGenerator
             {
                 if (m.Parameters.Length == 0)
                 {
-                    sb.AppendLine($"            return new VoidMethodSetup(a => _mock._setup_{m.Name} = a);");
+                    sb.AppendLine($"            return new VoidMethodSetup(a => _mock.{fieldName} = a);");
                 }
                 else
                 {
                     var keyExpr = TupleExpr(m.Parameters);
-                    sb.AppendLine($"            return new VoidMethodSetup(a => _mock._setup_{m.Name}[{keyExpr}] = a);");
+                    sb.AppendLine($"            return new VoidMethodSetup(a => _mock.{fieldName}[{keyExpr}] = a);");
                 }
             }
             else
             {
                 if (m.Parameters.Length == 0)
                 {
-                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(f => _mock._setup_{m.Name} = f);");
+                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(f => _mock.{fieldName} = f);");
                 }
                 else
                 {
                     var keyExpr = TupleExpr(m.Parameters);
-                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(f => _mock._setup_{m.Name}[{keyExpr}] = f);");
+                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(f => _mock.{fieldName}[{keyExpr}] = f);");
                 }
             }
 
