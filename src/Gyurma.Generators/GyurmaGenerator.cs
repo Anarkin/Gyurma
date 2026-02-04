@@ -314,12 +314,12 @@ public class GyurmaGenerator : IIncrementalGenerator
             : $"({string.Join(", ", parameters.Select(p => FullTypeName(p.Type)))})";
 
     // Converts type name to valid C# identifier by replacing invalid chars with underscores
-    private static string SanitizeForIdentifier(string name) =>
+    internal static string SanitizeForIdentifier(string name) =>
         Regex.Replace(name, @"[^a-zA-Z0-9_]", "_");
 
     // Generates a unique signature string for a method based on its parameter types
     // Returns empty string for parameterless methods, otherwise "_Type1_Type2_..."
-    private static string GetMethodSignature(IMethodSymbol method) =>
+    internal static string GetMethodSignature(IMethodSymbol method) =>
         method.Parameters.Length == 0
             ? ""
             : "_" + string.Join("_", method.Parameters.Select(p => SanitizeForIdentifier(FullTypeName(p.Type))));
@@ -333,7 +333,7 @@ public class GyurmaGenerator : IIncrementalGenerator
         $"_setup_{property.Name}";
 
     // Generates a unique signature string for an indexer based on its parameter types
-    private static string GetIndexerSignature(IPropertySymbol indexer) =>
+    internal static string GetIndexerSignature(IPropertySymbol indexer) =>
         string.Join("_", indexer.Parameters.Select(p => SanitizeForIdentifier(FullTypeName(p.Type))));
 
     private static string IndexerFieldName(IPropertySymbol indexer) =>
