@@ -204,3 +204,42 @@ calculator["x"] = "value";
 // getter still has no setup:
 Assert.Throws<NotImplementedException>(() => calculator["x"]);
 ```
+
+## generics
+
+having the following production type:
+
+```cs
+public interface IGenericType<TClass1, TClass2>
+{
+    TClass1 Filter(TClass1 value);
+    TClass2 Map(TClass1 value);
+
+    TClass1 this[int index] { get; set; }
+    TClass2 this[string index] { get; set; }
+
+    TMethod2 Select<TMethod1, TMethod2>(TMethod1 value);
+}
+```
+
+and the following considerations:
+- constraints are preserved in the generated mock, meaning compile-time errors occur when violated
+- different type arguments are treated as separate setups, similar to how different argument values work, meaning that setting up `Select<int, string>` does not affect `Select<bool, double>`, and vice versa
+- nested generics are supported
+
+the usage goes as:
+
+```cs
+[assembly: Gyurma(typeof(IGenericType<,>))] // open
+
+var genericType = new IGenericTypeGyurma<string, int>();
+genericType.Setup.Filter("input").Returns("npt");
+genericType.Setup.Map("hello").Returns(42);
+
+genericType.Setup[0].Returns("first");
+genericType.Setup["key"].Returns(42);
+
+genericType.Setup.Select<bool, double>(true).Returns(1.0);
+genericType.Setup.Select<int, string>(1).Returns("one");
+
+```
