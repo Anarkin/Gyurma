@@ -310,7 +310,7 @@ public class GyurmaGenerator : IIncrementalGenerator
 
     private static string TupleType(ImmutableArray<IParameterSymbol> parameters) =>
         parameters.Length == 1
-            ? $"({FullTypeName(parameters[0].Type)}, byte)"
+            ? FullTypeName(parameters[0].Type)
             : $"({string.Join(", ", parameters.Select(p => FullTypeName(p.Type)))})";
 
     // Converts type name to valid C# identifier by replacing invalid chars with underscores
@@ -341,6 +341,6 @@ public class GyurmaGenerator : IIncrementalGenerator
 
     private static string TupleExpr(ImmutableArray<IParameterSymbol> parameters) =>
         parameters.Length == 1
-            ? $"({parameters[0].Name}, 0)"
+            ? parameters[0].Name
             : $"({string.Join(", ", parameters.Select(p => p.Name))})";
 }
