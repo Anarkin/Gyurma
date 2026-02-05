@@ -11,6 +11,8 @@ namespace Gyurma.Generators;
 [Generator]
 public class GyurmaGenerator : IIncrementalGenerator
 {
+    private static readonly Regex InvalidIdentifierChars = new(@"[^a-zA-Z0-9_]", RegexOptions.Compiled);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var attributes = context.SyntaxProvider.CreateSyntaxProvider(
@@ -68,17 +70,19 @@ public class GyurmaGenerator : IIncrementalGenerator
         var isInterface = type.TypeKind == TypeKind.Interface;
         var isClass = type.TypeKind == TypeKind.Class;
 
+        var members = type.GetMembers();
+
         var methods = isInterface
-            ? type.GetMembers().OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary).ToList()
-            : type.GetMembers().OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary && (m.IsAbstract || m.IsVirtual)).ToList();
+            ? members.OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary).ToList()
+            : members.OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary && (m.IsAbstract || m.IsVirtual)).ToList();
 
         var properties = isInterface
-            ? type.GetMembers().OfType<IPropertySymbol>().Where(p => !p.IsIndexer).ToList()
-            : type.GetMembers().OfType<IPropertySymbol>().Where(p => !p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
+            ? members.OfType<IPropertySymbol>().Where(p => !p.IsIndexer).ToList()
+            : members.OfType<IPropertySymbol>().Where(p => !p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
 
         var indexers = isInterface
-            ? type.GetMembers().OfType<IPropertySymbol>().Where(p => p.IsIndexer).ToList()
-            : type.GetMembers().OfType<IPropertySymbol>().Where(p => p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
+            ? members.OfType<IPropertySymbol>().Where(p => p.IsIndexer).ToList()
+            : members.OfType<IPropertySymbol>().Where(p => p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
 
         sb.AppendLine("#nullable enable");
         sb.AppendLine("using System;");
@@ -315,7 +319,7 @@ public class GyurmaGenerator : IIncrementalGenerator
 
     // Converts type name to valid C# identifier by replacing invalid chars with underscores
     internal static string SanitizeForIdentifier(string name) =>
-        Regex.Replace(name, @"[^a-zA-Z0-9_]", "_");
+        InvalidIdentifierChars.Replace(name, "_");
 
     // Generates a unique signature string for a method based on its parameter types
     // Returns empty string for parameterless methods, otherwise "_Type1_Type2_..."
