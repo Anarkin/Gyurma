@@ -228,6 +228,7 @@ public class GyurmaGenerator : IIncrementalGenerator
 
             if (p.SetMethod != null)
             {
+                var setter = p.SetMethod.IsInitOnly ? "init" : "set";
                 sb.AppendLine($"    {modifier} {returnType} {p.Name}");
                 sb.AppendLine("    {");
                 sb.AppendLine("        get");
@@ -237,7 +238,7 @@ public class GyurmaGenerator : IIncrementalGenerator
                 sb.AppendLine($"                throw new NotImplementedException();");
                 sb.AppendLine($"            return {PropertyFieldName(p)}();");
                 sb.AppendLine("        }");
-                sb.AppendLine($"        set {{ }}");
+                sb.AppendLine($"        {setter} {{ }}");
                 sb.AppendLine("    }");
             }
             else
@@ -278,7 +279,8 @@ public class GyurmaGenerator : IIncrementalGenerator
             sb.AppendLine("        }");
             if (idx.SetMethod != null)
             {
-                sb.AppendLine($"        set {{ }}");
+                var setter = idx.SetMethod.IsInitOnly ? "init" : "set";
+                sb.AppendLine($"        {setter} {{ }}");
             }
             sb.AppendLine("    }");
             sb.AppendLine();

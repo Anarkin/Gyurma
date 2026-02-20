@@ -5,6 +5,7 @@ using Xunit;
 [assembly: Gyurma(typeof(ICalculator))]
 [assembly: Gyurma(typeof(ICalculator))] // duplicate to verify deduplication in generator
 [assembly: Gyurma(typeof(ICalculator))]
+[assembly: Gyurma(typeof(IInitProps))]
 
 public interface ICalculator
 {
@@ -16,6 +17,12 @@ public interface ICalculator
     string Mode { get; set; }
     double this[int slot] { get; }
     string this[string register] { get; set; }
+}
+
+public interface IInitProps
+{
+    string Name { get; init; }
+    int ReadOnly { get; }
 }
 
 public class CalculatorTests
@@ -262,5 +269,29 @@ public class CalculatorTests
         calc.Setup["b"].Returns("beta");
         Assert.Equal("alpha", calc["a"]);
         Assert.Equal("beta", calc["b"]);
+    }
+
+    // ==================== Init-Only Properties ====================
+
+    [Fact]
+    public void Init_property_getter_returns_setup_value()
+    {
+        var mock = new IInitPropsGyurma();
+        mock.Setup.Name.Returns("Alice");
+        Assert.Equal("Alice", mock.Name);
+    }
+
+    [Fact]
+    public void Init_property_setter_is_noop()
+    {
+        var mock = new IInitPropsGyurma() { Name = "ignored" };
+        Assert.Throws<NotImplementedException>(() => mock.Name);
+    }
+
+    [Fact]
+    public void Init_property_getter_no_setup_throws()
+    {
+        var mock = new IInitPropsGyurma();
+        Assert.Throws<NotImplementedException>(() => mock.Name);
     }
 }
