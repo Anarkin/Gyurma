@@ -1,6 +1,6 @@
-# gyurma
+# CONCEPT.md
 
-a mocking framework project using source generators
+"gyurma", a mocking framework project using source generators
 
 ## public api
 

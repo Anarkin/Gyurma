@@ -12,7 +12,10 @@
       "Bash(Get-ChildItem -Recurse \"C:\\\\Code\\\\_personal\\\\Gyurma\\\\tests\\\\Gyurma.Tests\\\\obj\" -Filter \"*.cs\")",
       "Bash(Select-Object FullName)",
       "WebFetch(domain:github.com)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Code\\\\_personal\\\\Gyurma\\\\tests\\\\Gyurma.Tests\\\\obj\\\\Debug\\\\net10.0\\\\Gyurma.Generators\" -Recurse)",
+      "Bash(wc:*)"
     ]
   },
   "spinnerVerbs": {
@@ -20,5 +23,6 @@
     "verbs": [
       "🤔"
     ]
-  }
+  },
+  "prefersReducedMotion": true
 }

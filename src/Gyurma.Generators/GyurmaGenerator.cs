@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
@@ -25,13 +26,25 @@ public class GyurmaGenerator : IIncrementalGenerator
                 if (attr.ArgumentList?.Arguments.Count == 1 &&
                     attr.ArgumentList.Arguments[0].Expression is TypeOfExpressionSyntax typeOf)
                 {
-                    var typeInfo = ctx.SemanticModel.GetTypeInfo(typeOf.Type);
-                    if (typeInfo.Type is INamedTypeSymbol namedType)
+                    // For open generic types like typeof(IRepository<>), use GetSymbolInfo instead of GetTypeInfo
+                    var symbolInfo = ctx.SemanticModel.GetSymbolInfo(typeOf.Type);
+                    if (symbolInfo.Symbol is INamedTypeSymbol namedType)
                     {
                         // Verify the attribute is actually GyurmaAttribute
-                        var symbol = ctx.SemanticModel.GetSymbolInfo(attr).Symbol;
-                        if (symbol?.ContainingType?.ToDisplayString() == "Gyurma.GyurmaAttribute")
-                            return namedType;
+                        var attrSymbol = ctx.SemanticModel.GetSymbolInfo(attr).Symbol;
+                        if (attrSymbol?.ContainingType?.ToDisplayString() == "Gyurma.GyurmaAttribute")
+                        {
+                            // For open generic types, get the original definition
+                            return namedType.IsUnboundGenericType ? namedType.OriginalDefinition : namedType;
+                        }
+                    }
+                    // Fallback for non-generic types
+                    var typeInfo = ctx.SemanticModel.GetTypeInfo(typeOf.Type);
+                    if (typeInfo.Type is INamedTypeSymbol namedType2)
+                    {
+                        var attrSymbol = ctx.SemanticModel.GetSymbolInfo(attr).Symbol;
+                        if (attrSymbol?.ContainingType?.ToDisplayString() == "Gyurma.GyurmaAttribute")
+                            return namedType2;
                     }
                 }
                 return null;
@@ -57,7 +70,11 @@ public class GyurmaGenerator : IIncrementalGenerator
             }
 
             var source = GenerateMock(type);
-            ctx.AddSource($"{type.Name}Gyurma.g.cs", source);
+            // For generic types, include arity in filename to avoid conflicts
+            var fileName = type.TypeParameters.Length > 0
+                ? $"{type.Name}Gyurma_{type.TypeParameters.Length}.g.cs"
+                : $"{type.Name}Gyurma.g.cs";
+            ctx.AddSource(fileName, source);
         }
     }
 
@@ -66,9 +83,13 @@ public class GyurmaGenerator : IIncrementalGenerator
         var sb = new StringBuilder();
         var name = type.Name;
         var mockName = $"{name}Gyurma";
-        var fullName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var isInterface = type.TypeKind == TypeKind.Interface;
         var isClass = type.TypeKind == TypeKind.Class;
+
+        // Handle generic type parameters
+        var typeParamList = GetTypeParameterList(type.TypeParameters);
+        var typeConstraints = BuildConstraintClauses(type.TypeParameters);
+        var baseType = GetFullyQualifiedNameWithTypeParams(type);
 
         var members = type.GetMembers();
 
@@ -91,22 +112,25 @@ public class GyurmaGenerator : IIncrementalGenerator
         sb.AppendLine();
         sb.AppendLine("namespace Gyurma.Mocks;");
         sb.AppendLine();
-        sb.AppendLine($"public class {mockName} : {fullName}");
+        sb.AppendLine($"public class {mockName}{typeParamList} : {baseType}{typeConstraints}");
         sb.AppendLine("{");
 
         // Fields for each method
         foreach (var m in methods)
         {
             var isVoid = m.ReturnType.SpecialType == SpecialType.System_Void;
-            var delegateType = isVoid ? "Action" : $"Func<{FullTypeName(m.ReturnType)}>";
+            var isGenericMethod = m.TypeParameters.Length > 0;
 
-            if (m.Parameters.Length == 0)
+            // For generic methods, always use object return type and include Type[] in the key
+            var delegateType = isVoid ? "Action" : (isGenericMethod ? "Func<object?>" : $"Func<{FullTypeName(m.ReturnType)}>");
+
+            if (m.Parameters.Length == 0 && !isGenericMethod)
             {
                 sb.AppendLine($"    private {delegateType}? {MethodFieldName(m)};");
             }
             else
             {
-                var keyType = TupleType(m.Parameters);
+                var keyType = GetMethodKeyType(m);
                 sb.AppendLine($"    private readonly Dictionary<{keyType}, {delegateType}> {MethodFieldName(m)} = new();");
             }
         }
@@ -127,7 +151,7 @@ public class GyurmaGenerator : IIncrementalGenerator
 
         sb.AppendLine();
 
-        // Setup property
+        // Setup property - nested class type doesn't need type args in property declaration
         sb.AppendLine($"    public {mockName}Setup Setup {{ get; }}");
         sb.AppendLine();
 
@@ -143,14 +167,17 @@ public class GyurmaGenerator : IIncrementalGenerator
         foreach (var m in methods)
         {
             var isVoid = m.ReturnType.SpecialType == SpecialType.System_Void;
+            var isGenericMethod = m.TypeParameters.Length > 0;
+            var methodTypeParamList = GetTypeParameterList(m.TypeParameters);
+            var methodConstraints = BuildConstraintClauses(m.TypeParameters);
             var returnType = isVoid ? "void" : FullTypeName(m.ReturnType);
             var paramList = string.Join(", ", m.Parameters.Select(p => $"{FullTypeName(p.Type)} {p.Name}"));
 
             var modifier = isClass ? "public override" : "public";
-            sb.AppendLine($"    {modifier} {returnType} {m.Name}({paramList})");
+            sb.AppendLine($"    {modifier} {returnType} {m.Name}{methodTypeParamList}({paramList}){methodConstraints}");
             sb.AppendLine("    {");
 
-            if (m.Parameters.Length == 0)
+            if (m.Parameters.Length == 0 && !isGenericMethod)
             {
                 sb.AppendLine($"        if ({MethodFieldName(m)} == null)");
                 sb.AppendLine($"            throw new NotImplementedException();");
@@ -161,11 +188,13 @@ public class GyurmaGenerator : IIncrementalGenerator
             }
             else
             {
-                var keyExpr = TupleExpr(m.Parameters);
+                var keyExpr = GetMethodKeyExpr(m);
                 sb.AppendLine($"        if (!{MethodFieldName(m)}.TryGetValue({keyExpr}, out var impl))");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
                     sb.AppendLine($"        impl();");
+                else if (isGenericMethod)
+                    sb.AppendLine($"        return ({returnType})impl()!;");
                 else
                     sb.AppendLine($"        return impl();");
             }
@@ -234,12 +263,12 @@ public class GyurmaGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        // Setup class
+        // Setup class - nested class inherits type parameters from outer class, no need to redeclare
         sb.AppendLine($"    public class {mockName}Setup");
         sb.AppendLine("    {");
-        sb.AppendLine($"        private readonly {mockName} _mock;");
+        sb.AppendLine($"        private readonly {mockName}{typeParamList} _mock;");
         sb.AppendLine();
-        sb.AppendLine($"        public {mockName}Setup({mockName} mock)");
+        sb.AppendLine($"        public {mockName}Setup({mockName}{typeParamList} mock)");
         sb.AppendLine("        {");
         sb.AppendLine("            _mock = mock;");
         sb.AppendLine("        }");
@@ -248,33 +277,41 @@ public class GyurmaGenerator : IIncrementalGenerator
         foreach (var m in methods)
         {
             var isVoid = m.ReturnType.SpecialType == SpecialType.System_Void;
+            var isGenericMethod = m.TypeParameters.Length > 0;
+            var methodTypeParamList = GetTypeParameterList(m.TypeParameters);
+            var methodConstraints = BuildConstraintClauses(m.TypeParameters);
             var setupReturn = isVoid ? "IVoidMethodSetup" : $"IMethodSetup<{FullTypeName(m.ReturnType)}>";
             var paramList = string.Join(", ", m.Parameters.Select(p => $"{FullTypeName(p.Type)} {p.Name}"));
 
-            sb.AppendLine($"        public {setupReturn} {m.Name}({paramList})");
+            sb.AppendLine($"        public {setupReturn} {m.Name}{methodTypeParamList}({paramList}){methodConstraints}");
             sb.AppendLine("        {");
 
             if (isVoid)
             {
-                if (m.Parameters.Length == 0)
+                if (m.Parameters.Length == 0 && !isGenericMethod)
                 {
                     sb.AppendLine($"            return new VoidMethodSetup(__impl => _mock.{MethodFieldName(m)} = __impl);");
                 }
                 else
                 {
-                    var keyExpr = TupleExpr(m.Parameters);
+                    var keyExpr = GetMethodKeyExpr(m);
                     sb.AppendLine($"            return new VoidMethodSetup(__impl => _mock.{MethodFieldName(m)}[{keyExpr}] = __impl);");
                 }
             }
             else
             {
-                if (m.Parameters.Length == 0)
+                if (m.Parameters.Length == 0 && !isGenericMethod)
                 {
                     sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(__impl => _mock.{MethodFieldName(m)} = __impl);");
                 }
+                else if (isGenericMethod)
+                {
+                    var keyExpr = GetMethodKeyExpr(m);
+                    sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(__impl => _mock.{MethodFieldName(m)}[{keyExpr}] = () => __impl());");
+                }
                 else
                 {
-                    var keyExpr = TupleExpr(m.Parameters);
+                    var keyExpr = GetMethodKeyExpr(m);
                     sb.AppendLine($"            return new MethodSetup<{FullTypeName(m.ReturnType)}>(__impl => _mock.{MethodFieldName(m)}[{keyExpr}] = __impl);");
                 }
             }
@@ -330,7 +367,7 @@ public class GyurmaGenerator : IIncrementalGenerator
 
     // Generates the internal field name for storing a method's setup delegate
     private static string MethodFieldName(IMethodSymbol method) =>
-        $"_setup_{method.Name}{GetMethodSignature(method)}";
+        $"_setup_{method.Name}{GetMethodTypeArity(method)}{GetMethodSignature(method)}";
 
     // Properties cannot be overloaded, so no signature needed - just the name
     private static string PropertyFieldName(IPropertySymbol property) =>
@@ -347,4 +384,94 @@ public class GyurmaGenerator : IIncrementalGenerator
         parameters.Length == 1
             ? parameters[0].Name
             : $"({string.Join(", ", parameters.Select(p => p.Name))})";
+
+    // Get type parameter list: "" or "<T>" or "<TKey, TValue>"
+    private static string GetTypeParameterList(ImmutableArray<ITypeParameterSymbol> typeParams)
+    {
+        if (typeParams.Length == 0) return "";
+        return "<" + string.Join(", ", typeParams.Select(tp => tp.Name)) + ">";
+    }
+
+    // Build constraint clauses: " where T : class, new()"
+    private static string BuildConstraintClauses(ImmutableArray<ITypeParameterSymbol> typeParams)
+    {
+        var clauses = new List<string>();
+        foreach (var tp in typeParams)
+        {
+            var constraints = new List<string>();
+            if (tp.HasReferenceTypeConstraint) constraints.Add("class");
+            if (tp.HasValueTypeConstraint) constraints.Add("struct");
+            if (tp.HasUnmanagedTypeConstraint) constraints.Add("unmanaged");
+            if (tp.HasNotNullConstraint) constraints.Add("notnull");
+            foreach (var c in tp.ConstraintTypes) constraints.Add(FullTypeName(c));
+            if (tp.HasConstructorConstraint) constraints.Add("new()");
+
+            if (constraints.Count > 0)
+                clauses.Add($"where {tp.Name} : {string.Join(", ", constraints)}");
+        }
+        return clauses.Count > 0 ? " " + string.Join(" ", clauses) : "";
+    }
+
+    // Get fully qualified name preserving type parameters (for base type declaration)
+    private static string GetFullyQualifiedNameWithTypeParams(INamedTypeSymbol type)
+    {
+        if (type.TypeParameters.Length == 0)
+            return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // Build the fully qualified name with type parameter names
+        var ns = type.ContainingNamespace;
+        string prefix;
+        if (ns == null || ns.IsGlobalNamespace)
+            prefix = "global::";
+        else
+            prefix = $"global::{ns.ToDisplayString()}.";
+        var typeParams = string.Join(", ", type.TypeParameters.Select(tp => tp.Name));
+        return $"{prefix}{type.Name}<{typeParams}>";
+    }
+
+    // Get the dictionary key type for a method (includes Type[] for generic methods)
+    private static string GetMethodKeyType(IMethodSymbol method)
+    {
+        var parts = new List<string>();
+
+        // Add Type for each type parameter
+        for (int i = 0; i < method.TypeParameters.Length; i++)
+            parts.Add("Type");
+
+        // Add parameter types - convert method type parameters to object
+        foreach (var p in method.Parameters)
+            parts.Add(GetParameterTypeForKey(p.Type, method.TypeParameters));
+
+        return parts.Count == 1 ? parts[0] : $"({string.Join(", ", parts)})";
+    }
+
+    // Get the type name for a parameter in the key type - method type parameters become object
+    private static string GetParameterTypeForKey(ITypeSymbol type, ImmutableArray<ITypeParameterSymbol> methodTypeParams)
+    {
+        // If the type is a method type parameter, use object
+        if (type is ITypeParameterSymbol tp && methodTypeParams.Contains(tp, SymbolEqualityComparer.Default))
+            return "object";
+
+        return FullTypeName(type);
+    }
+
+    // Get the key expression for a method call (includes typeof(T) for generic methods)
+    private static string GetMethodKeyExpr(IMethodSymbol method)
+    {
+        var parts = new List<string>();
+
+        // Add typeof(T) for each type parameter
+        foreach (var tp in method.TypeParameters)
+            parts.Add($"typeof({tp.Name})");
+
+        // Add parameter names
+        foreach (var p in method.Parameters)
+            parts.Add(p.Name);
+
+        return parts.Count == 1 ? parts[0] : $"({string.Join(", ", parts)})";
+    }
+
+    // Get method type arity suffix for field names (to distinguish generic overloads)
+    private static string GetMethodTypeArity(IMethodSymbol method) =>
+        method.TypeParameters.Length > 0 ? $"_T{method.TypeParameters.Length}" : "";
 }
