@@ -243,3 +243,76 @@ genericType.Setup.Select<bool, double>(true).Returns(1.0);
 genericType.Setup.Select<int, string>(1).Returns("one");
 
 ```
+
+## call counts
+
+the generated mock also has a `CallCounts` property that mirrors `Setup` structurally, where every member returns `int` — the number of times it was invoked with those specific arguments. users assert on counts with standard xUnit assertions.
+
+considerations on call counts:
+- every call to a member increments its count, including calls that throw `NotImplementedException` (no setup)
+- different arguments are tracked separately (same strict equality rules as setup)
+- uncalled members return `0`
+- property and indexer counts track getter invocations only (setters are no-ops and not counted)
+- generic method type arguments are tracked separately (same rules as setup)
+
+### methods
+
+```cs
+var calculator = new ICalculatorGyurma();
+calculator.Setup.Add(2, 3).Returns(5);
+
+calculator.Add(2, 3);
+calculator.Add(2, 3);
+
+Assert.Equal(5, calculator.Add(2, 3));
+Assert.Equal(3, calculator.CallCounts.Add(2, 3));
+Assert.Equal(0, calculator.CallCounts.Add(9, 9));
+```
+
+```cs
+var calculator = new ICalculatorGyurma();
+
+calculator.Setup.MemoryClear();
+calculator.MemoryClear();
+calculator.MemoryClear();
+
+Assert.Equal(2, calculator.CallCounts.MemoryClear());
+```
+
+calls through `NotImplementedException` are still counted:
+
+```cs
+var calculator = new ICalculatorGyurma();
+
+Assert.Throws<NotImplementedException>(() => calculator.Add(1, 1));
+
+Assert.Equal(1, calculator.CallCounts.Add(1, 1));
+```
+
+### properties
+
+```cs
+var calculator = new ICalculatorGyurma();
+calculator.Setup.LastResult.Returns(42.0);
+
+_ = calculator.LastResult;
+_ = calculator.LastResult;
+
+Assert.Equal(2, calculator.CallCounts.LastResult);
+```
+
+### indexers
+
+```cs
+var calculator = new ICalculatorGyurma();
+calculator.Setup[0].Returns(3.14);
+calculator.Setup[1].Returns(2.72);
+
+_ = calculator[0];
+_ = calculator[0];
+_ = calculator[1];
+
+Assert.Equal(2, calculator.CallCounts[0]);
+Assert.Equal(1, calculator.CallCounts[1]);
+Assert.Equal(0, calculator.CallCounts[99]);
+```

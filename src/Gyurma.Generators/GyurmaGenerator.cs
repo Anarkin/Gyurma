@@ -127,11 +127,13 @@ public class GyurmaGenerator : IIncrementalGenerator
             if (m.Parameters.Length == 0 && !isGenericMethod)
             {
                 sb.AppendLine($"    private {delegateType}? {MethodFieldName(m)};");
+                sb.AppendLine($"    private int {MethodCallCountFieldName(m)};");
             }
             else
             {
                 var keyType = GetMethodKeyType(m);
                 sb.AppendLine($"    private readonly Dictionary<{keyType}, {delegateType}> {MethodFieldName(m)} = new();");
+                sb.AppendLine($"    private readonly Dictionary<{keyType}, int> {MethodCallCountFieldName(m)} = new();");
             }
         }
 
@@ -139,6 +141,7 @@ public class GyurmaGenerator : IIncrementalGenerator
         foreach (var p in properties)
         {
             sb.AppendLine($"    private Func<{FullTypeName(p.Type)}>? {PropertyFieldName(p)};");
+            sb.AppendLine($"    private int {PropertyCallCountFieldName(p)};");
         }
 
         // Fields for each indexer
@@ -147,12 +150,14 @@ public class GyurmaGenerator : IIncrementalGenerator
             var fieldName = IndexerFieldName(idx);
             var keyType = TupleType(idx.Parameters);
             sb.AppendLine($"    private readonly Dictionary<{keyType}, Func<{FullTypeName(idx.Type)}>> {fieldName} = new();");
+            sb.AppendLine($"    private readonly Dictionary<{keyType}, int> {IndexerCallCountFieldName(idx)} = new();");
         }
 
         sb.AppendLine();
 
-        // Setup property - nested class type doesn't need type args in property declaration
+        // Setup and CallCounts properties
         sb.AppendLine($"    public {mockName}Setup Setup {{ get; }}");
+        sb.AppendLine($"    public {mockName}CallCounts CallCounts {{ get; }}");
         sb.AppendLine();
 
         // Constructor
@@ -160,6 +165,7 @@ public class GyurmaGenerator : IIncrementalGenerator
         sb.AppendLine($"    public {mockName}(){baseCall}");
         sb.AppendLine("    {");
         sb.AppendLine("        Setup = new(this);");
+        sb.AppendLine("        CallCounts = new(this);");
         sb.AppendLine("    }");
         sb.AppendLine();
 
@@ -179,6 +185,7 @@ public class GyurmaGenerator : IIncrementalGenerator
 
             if (m.Parameters.Length == 0 && !isGenericMethod)
             {
+                sb.AppendLine($"        {MethodCallCountFieldName(m)}++;");
                 sb.AppendLine($"        if ({MethodFieldName(m)} == null)");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
@@ -189,7 +196,9 @@ public class GyurmaGenerator : IIncrementalGenerator
             else
             {
                 var keyExpr = GetMethodKeyExpr(m);
-                sb.AppendLine($"        if (!{MethodFieldName(m)}.TryGetValue({keyExpr}, out var impl))");
+                sb.AppendLine($"        var __key = {keyExpr};");
+                sb.AppendLine($"        {MethodCallCountFieldName(m)}[__key] = {MethodCallCountFieldName(m)}.TryGetValue(__key, out var __cc) ? __cc + 1 : 1;");
+                sb.AppendLine($"        if (!{MethodFieldName(m)}.TryGetValue(__key, out var impl))");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
                     sb.AppendLine($"        impl();");
@@ -215,6 +224,7 @@ public class GyurmaGenerator : IIncrementalGenerator
                 sb.AppendLine("    {");
                 sb.AppendLine("        get");
                 sb.AppendLine("        {");
+                sb.AppendLine($"            {PropertyCallCountFieldName(p)}++;");
                 sb.AppendLine($"            if ({PropertyFieldName(p)} == null)");
                 sb.AppendLine($"                throw new NotImplementedException();");
                 sb.AppendLine($"            return {PropertyFieldName(p)}();");
@@ -228,6 +238,7 @@ public class GyurmaGenerator : IIncrementalGenerator
                 sb.AppendLine("    {");
                 sb.AppendLine("        get");
                 sb.AppendLine("        {");
+                sb.AppendLine($"            {PropertyCallCountFieldName(p)}++;");
                 sb.AppendLine($"            if ({PropertyFieldName(p)} == null)");
                 sb.AppendLine($"                throw new NotImplementedException();");
                 sb.AppendLine($"            return {PropertyFieldName(p)}();");
@@ -247,10 +258,12 @@ public class GyurmaGenerator : IIncrementalGenerator
             var fieldName = IndexerFieldName(idx);
             var keyExpr = TupleExpr(idx.Parameters);
 
+            var ccFieldName = IndexerCallCountFieldName(idx);
             sb.AppendLine($"    {modifier} {returnType} this[{paramList}]");
             sb.AppendLine("    {");
             sb.AppendLine("        get");
             sb.AppendLine("        {");
+            sb.AppendLine($"            {ccFieldName}[{keyExpr}] = {ccFieldName}.TryGetValue({keyExpr}, out var __cc) ? __cc + 1 : 1;");
             sb.AppendLine($"            if (!{fieldName}.TryGetValue({keyExpr}, out var impl))");
             sb.AppendLine($"                throw new NotImplementedException();");
             sb.AppendLine($"            return impl();");
@@ -341,6 +354,59 @@ public class GyurmaGenerator : IIncrementalGenerator
         }
 
         sb.AppendLine("    }");
+        sb.AppendLine();
+
+        // CallCounts class
+        sb.AppendLine($"    public class {mockName}CallCounts");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        private readonly {mockName}{typeParamList} _mock;");
+        sb.AppendLine();
+        sb.AppendLine($"        public {mockName}CallCounts({mockName}{typeParamList} mock)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            _mock = mock;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+
+        foreach (var m in methods)
+        {
+            var isGenericMethod = m.TypeParameters.Length > 0;
+            var methodTypeParamList = GetTypeParameterList(m.TypeParameters);
+            var methodConstraints = BuildConstraintClauses(m.TypeParameters);
+            var paramList = string.Join(", ", m.Parameters.Select(p => $"{FullTypeName(p.Type)} {p.Name}"));
+
+            sb.AppendLine($"        public int {m.Name}{methodTypeParamList}({paramList}){methodConstraints}");
+            sb.AppendLine("        {");
+
+            if (m.Parameters.Length == 0 && !isGenericMethod)
+            {
+                sb.AppendLine($"            return _mock.{MethodCallCountFieldName(m)};");
+            }
+            else
+            {
+                var keyExpr = GetMethodKeyExpr(m);
+                sb.AppendLine($"            return _mock.{MethodCallCountFieldName(m)}.TryGetValue({keyExpr}, out var c) ? c : 0;");
+            }
+
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
+        foreach (var p in properties)
+        {
+            sb.AppendLine($"        public int {p.Name} => _mock.{PropertyCallCountFieldName(p)};");
+            sb.AppendLine();
+        }
+
+        foreach (var idx in indexers)
+        {
+            var paramList = string.Join(", ", idx.Parameters.Select(p => $"{FullTypeName(p.Type)} {p.Name}"));
+            var keyExpr = TupleExpr(idx.Parameters);
+
+            sb.AppendLine($"        public int this[{paramList}] => _mock.{IndexerCallCountFieldName(idx)}.TryGetValue({keyExpr}, out var c) ? c : 0;");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("    }");
         sb.AppendLine("}");
 
         return sb.ToString();
@@ -379,6 +445,16 @@ public class GyurmaGenerator : IIncrementalGenerator
 
     private static string IndexerFieldName(IPropertySymbol indexer) =>
         $"_setup_Indexer_{GetIndexerSignature(indexer)}";
+
+    // Call count field name helpers (mirror setup field names with _callCount_ prefix)
+    private static string MethodCallCountFieldName(IMethodSymbol method) =>
+        $"_callCount_{method.Name}{GetMethodTypeArity(method)}{GetMethodSignature(method)}";
+
+    private static string PropertyCallCountFieldName(IPropertySymbol property) =>
+        $"_callCount_{property.Name}";
+
+    private static string IndexerCallCountFieldName(IPropertySymbol indexer) =>
+        $"_callCount_Indexer_{GetIndexerSignature(indexer)}";
 
     private static string TupleExpr(ImmutableArray<IParameterSymbol> parameters) =>
         parameters.Length == 1
