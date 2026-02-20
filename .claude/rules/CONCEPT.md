@@ -82,7 +82,7 @@ considerations on methods:
 - setting up the same method multiple times with the same arguments: the last setup is effective only
 - setting up the same method multiple times with different arguments: works separately
 - a setup (the last one of same arguments) is permanent, i.e. it returns the same upon multiple calls
-- there is no way to verify that a method was called
+- there is no built-in `Verify()` API — use `CallCounts` with standard assertions instead
 
 considerations on arguments:
 - strict equality; no argument matchers exist
