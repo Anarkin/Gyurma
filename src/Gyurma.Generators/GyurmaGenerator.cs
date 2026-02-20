@@ -91,19 +91,27 @@ public class GyurmaGenerator : IIncrementalGenerator
         var typeConstraints = BuildConstraintClauses(type.TypeParameters);
         var baseType = GetFullyQualifiedNameWithTypeParams(type);
 
-        var members = type.GetMembers();
+        // type.GetMembers() only returns directly declared members, so we must also gather:
+        // - For interfaces: members from all base interfaces
+        // - For classes: inherited abstract members from the base type chain
+        var allMembers = isInterface
+            ? type.GetMembers().Concat(type.AllInterfaces.SelectMany(i => i.GetMembers()))
+            : type.GetMembers().Concat(GetInheritedAbstractMembers(type));
 
         var methods = isInterface
-            ? members.OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary).ToList()
-            : members.OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary && (m.IsAbstract || m.IsVirtual)).ToList();
+            ? allMembers.OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary)
+                .GroupBy(m => MethodFieldName(m)).Select(g => g.First()).ToList()
+            : allMembers.OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Ordinary && (m.IsAbstract || m.IsVirtual)).ToList();
 
         var properties = isInterface
-            ? members.OfType<IPropertySymbol>().Where(p => !p.IsIndexer).ToList()
-            : members.OfType<IPropertySymbol>().Where(p => !p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
+            ? allMembers.OfType<IPropertySymbol>().Where(p => !p.IsIndexer)
+                .GroupBy(p => PropertyFieldName(p)).Select(g => g.FirstOrDefault(p => p.SetMethod != null) ?? g.First()).ToList()
+            : allMembers.OfType<IPropertySymbol>().Where(p => !p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
 
         var indexers = isInterface
-            ? members.OfType<IPropertySymbol>().Where(p => p.IsIndexer).ToList()
-            : members.OfType<IPropertySymbol>().Where(p => p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
+            ? allMembers.OfType<IPropertySymbol>().Where(p => p.IsIndexer)
+                .GroupBy(p => IndexerFieldName(p)).Select(g => g.FirstOrDefault(p => p.SetMethod != null) ?? g.First()).ToList()
+            : allMembers.OfType<IPropertySymbol>().Where(p => p.IsIndexer && (p.IsAbstract || p.IsVirtual)).ToList();
 
         sb.AppendLine("#nullable enable");
         sb.AppendLine("using System;");
@@ -550,4 +558,42 @@ public class GyurmaGenerator : IIncrementalGenerator
     // Get method type arity suffix for field names (to distinguish generic overloads)
     private static string GetMethodTypeArity(IMethodSymbol method) =>
         method.TypeParameters.Length > 0 ? $"_T{method.TypeParameters.Length}" : "";
+
+    // Walks the base type chain and collects abstract/virtual members that haven't been overridden
+    private static IEnumerable<ISymbol> GetInheritedAbstractMembers(INamedTypeSymbol type)
+    {
+        var overridden = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+
+        // Collect what the target type itself overrides
+        foreach (var m in type.GetMembers())
+        {
+            if (m is IMethodSymbol ms && ms.OverriddenMethod != null)
+                overridden.Add(ms.OverriddenMethod);
+            else if (m is IPropertySymbol ps && ps.OverriddenProperty != null)
+                overridden.Add(ps.OverriddenProperty);
+        }
+
+        var current = type.BaseType;
+        while (current != null && current.SpecialType != SpecialType.System_Object)
+        {
+            foreach (var member in current.GetMembers())
+            {
+                if (member is IMethodSymbol m && m.MethodKind == MethodKind.Ordinary)
+                {
+                    if ((m.IsAbstract || m.IsVirtual) && !overridden.Contains(m))
+                        yield return m;
+                    if (m.OverriddenMethod != null)
+                        overridden.Add(m.OverriddenMethod);
+                }
+                else if (member is IPropertySymbol p)
+                {
+                    if ((p.IsAbstract || p.IsVirtual) && !overridden.Contains(p))
+                        yield return p;
+                    if (p.OverriddenProperty != null)
+                        overridden.Add(p.OverriddenProperty);
+                }
+            }
+            current = current.BaseType;
+        }
+    }
 }

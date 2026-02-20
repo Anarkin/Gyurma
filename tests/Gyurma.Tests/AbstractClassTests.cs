@@ -3,12 +3,25 @@ using Gyurma.Mocks;
 using Xunit;
 
 [assembly: Gyurma(typeof(AbstractShape))]
+[assembly: Gyurma(typeof(AbstractDerived))]
+[assembly: Gyurma(typeof(AbstractPartialOverride))]
 
 public abstract class AbstractShape
 {
     public abstract double Area();
     public abstract double Perimeter(double scale);
     public virtual void Validate() { }
+}
+
+public abstract class AbstractDerived : AbstractShape
+{
+    public abstract string Name { get; }
+}
+
+public abstract class AbstractPartialOverride : AbstractShape
+{
+    public sealed override double Area() => 0;
+    // Perimeter() and Validate() remain inherited from AbstractShape
 }
 
 public class AbstractClassTests
@@ -109,5 +122,87 @@ public class AbstractClassTests
         var shape = new AbstractShapeGyurma();
         shape.Setup.Perimeter(1.0).Returns(4.0);
         Assert.Throws<NotImplementedException>(() => shape.Perimeter(2.0));
+    }
+
+    // ==================== Abstract Class Inheritance ====================
+
+    [Fact]
+    public void Derived_own_member_works()
+    {
+        var mock = new AbstractDerivedGyurma();
+        mock.Setup.Name.Returns("test");
+        Assert.Equal("test", mock.Name);
+    }
+
+    [Fact]
+    public void Derived_inherited_abstract_method_works()
+    {
+        var mock = new AbstractDerivedGyurma();
+        mock.Setup.Area().Returns(25.0);
+        Assert.Equal(25.0, mock.Area());
+    }
+
+    [Fact]
+    public void Derived_inherited_abstract_method_with_args_works()
+    {
+        var mock = new AbstractDerivedGyurma();
+        mock.Setup.Perimeter(2.0).Returns(16.0);
+        Assert.Equal(16.0, mock.Perimeter(2.0));
+    }
+
+    [Fact]
+    public void Derived_inherited_virtual_method_works()
+    {
+        var mock = new AbstractDerivedGyurma();
+        mock.Setup.Validate();
+        mock.Validate(); // should not throw
+    }
+
+    [Fact]
+    public void Derived_inherited_no_setup_throws()
+    {
+        var mock = new AbstractDerivedGyurma();
+        Assert.Throws<NotImplementedException>(() => mock.Area());
+    }
+
+    [Fact]
+    public void Derived_is_assignable_to_all_ancestors()
+    {
+        var mock = new AbstractDerivedGyurma();
+        Assert.IsAssignableFrom<AbstractDerived>(mock);
+        Assert.IsAssignableFrom<AbstractShape>(mock);
+    }
+
+    // ==================== Partial Override (Sealed) ====================
+
+    [Fact]
+    public void Partial_override_sealed_method_uses_base_impl()
+    {
+        var mock = new AbstractPartialOverrideGyurma();
+        // Area() is sealed in AbstractPartialOverride, so it uses the concrete implementation
+        Assert.Equal(0, mock.Area());
+    }
+
+    [Fact]
+    public void Partial_override_inherited_abstract_method_works()
+    {
+        var mock = new AbstractPartialOverrideGyurma();
+        mock.Setup.Perimeter(1.0).Returns(4.0);
+        Assert.Equal(4.0, mock.Perimeter(1.0));
+    }
+
+    [Fact]
+    public void Partial_override_inherited_virtual_method_works()
+    {
+        var mock = new AbstractPartialOverrideGyurma();
+        mock.Setup.Validate();
+        mock.Validate(); // should not throw
+    }
+
+    [Fact]
+    public void Partial_override_inherited_no_setup_throws()
+    {
+        var mock = new AbstractPartialOverrideGyurma();
+        Assert.Throws<NotImplementedException>(() => mock.Perimeter(1.0));
     }
 }
