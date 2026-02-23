@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch",
       "Bash(tree:*)",
       "Bash(ls:*)",
       "Bash(dir:*)",
@@ -11,7 +10,6 @@
       "Bash(findstr:*)",
       "Bash(Get-ChildItem -Recurse \"C:\\\\Code\\\\_personal\\\\Gyurma\\\\tests\\\\Gyurma.Tests\\\\obj\" -Filter \"*.cs\")",
       "Bash(Select-Object FullName)",
-      "WebFetch(domain:github.com)",
       "Bash(xargs:*)",
       "Bash(dotnet clean:*)",
       "Bash(Get-ChildItem -Path \"C:\\\\Code\\\\_personal\\\\Gyurma\\\\tests\\\\Gyurma.Tests\\\\obj\\\\Debug\\\\net10.0\\\\Gyurma.Generators\" -Recurse)",
@@ -22,12 +20,5 @@
       "Bash(\"C:/Code/_personal/Gyurma/tests/Gyurma.Tests/TempTest_SealedOverride.cs\":*)",
       "Bash(\"C:/Code/_personal/Gyurma/tests/Gyurma.Tests/TempTest_PropAccessor.cs\":*)"
     ]
-  },
-  "spinnerVerbs": {
-    "mode": "replace",
-    "verbs": [
-      "🤔"
-    ]
-  },
-  "prefersReducedMotion": true
+  }
 }
