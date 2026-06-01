@@ -7,6 +7,6 @@ public class GyurmaAttribute : Attribute
 
     public GyurmaAttribute(Type type)
     {
-        Type = type;
+        this.Type = type;
     }
 }

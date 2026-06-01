@@ -6,9 +6,12 @@ public class VoidMethodSetup : IVoidMethodSetup
 
     public VoidMethodSetup(Action<Action> register)
     {
-        _register = register;
-        _register(() => { });
+        this._register = register;
+        this._register(() => { });
     }
 
-    public void Throws<TException>() where TException : Exception, new() => _register(() => throw new TException());
+    public void Throws<TException>() where TException : Exception, new()
+    {
+        this._register(() => throw new TException());
+    }
 }

@@ -6,10 +6,16 @@ public class MethodSetup<T> : IMethodSetup<T>
 
     public MethodSetup(Action<Func<T>> register)
     {
-        _register = register;
+        this._register = register;
     }
 
-    public void Returns(T value) => _register(() => value);
+    public void Returns(T value)
+    {
+        this._register(() => value);
+    }
 
-    public void Throws<TException>() where TException : Exception, new() => _register(() => throw new TException());
+    public void Throws<TException>() where TException : Exception, new()
+    {
+        this._register(() => throw new TException());
+    }
 }

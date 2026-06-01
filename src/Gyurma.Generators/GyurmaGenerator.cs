@@ -44,7 +44,9 @@ public class GyurmaGenerator : IIncrementalGenerator
                     {
                         var attrSymbol = ctx.SemanticModel.GetSymbolInfo(attr).Symbol;
                         if (attrSymbol?.ContainingType?.ToDisplayString() == "Gyurma.GyurmaAttribute")
+                        {
                             return namedType2;
+                        }
                     }
                 }
                 return null;
@@ -197,9 +199,13 @@ public class GyurmaGenerator : IIncrementalGenerator
                 sb.AppendLine($"        if ({MethodFieldName(m)} == null)");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
+                {
                     sb.AppendLine($"        {MethodFieldName(m)}();");
+                }
                 else
+                {
                     sb.AppendLine($"        return {MethodFieldName(m)}();");
+                }
             }
             else
             {
@@ -209,11 +215,17 @@ public class GyurmaGenerator : IIncrementalGenerator
                 sb.AppendLine($"        if (!{MethodFieldName(m)}.TryGetValue(__key, out var impl))");
                 sb.AppendLine($"            throw new NotImplementedException();");
                 if (isVoid)
+                {
                     sb.AppendLine($"        impl();");
+                }
                 else if (isGenericMethod)
+                {
                     sb.AppendLine($"        return ({returnType})impl()!;");
+                }
                 else
+                {
                     sb.AppendLine($"        return impl();");
+                }
             }
 
             sb.AppendLine("    }");
@@ -422,59 +434,87 @@ public class GyurmaGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    private static string FullTypeName(ITypeSymbol type) =>
-        type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    private static string FullTypeName(ITypeSymbol type)
+    {
+        return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    }
 
-    private static string TupleType(ImmutableArray<IParameterSymbol> parameters) =>
-        parameters.Length == 1
+    private static string TupleType(ImmutableArray<IParameterSymbol> parameters)
+    {
+        return parameters.Length == 1
             ? FullTypeName(parameters[0].Type)
             : $"({string.Join(", ", parameters.Select(p => FullTypeName(p.Type)))})";
+    }
 
     // Converts type name to valid C# identifier by replacing invalid chars with underscores
-    internal static string SanitizeForIdentifier(string name) =>
-        InvalidIdentifierChars.Replace(name, "_");
+    internal static string SanitizeForIdentifier(string name)
+    {
+        return InvalidIdentifierChars.Replace(name, "_");
+    }
 
     // Generates a unique signature string for a method based on its parameter types
     // Returns empty string for parameterless methods, otherwise "_Type1_Type2_..."
-    internal static string GetMethodSignature(IMethodSymbol method) =>
-        method.Parameters.Length == 0
+    internal static string GetMethodSignature(IMethodSymbol method)
+    {
+        return method.Parameters.Length == 0
             ? ""
             : "_" + string.Join("_", method.Parameters.Select(p => SanitizeForIdentifier(FullTypeName(p.Type))));
+    }
 
     // Generates the internal field name for storing a method's setup delegate
-    private static string MethodFieldName(IMethodSymbol method) =>
-        $"_setup_{method.Name}{GetMethodTypeArity(method)}{GetMethodSignature(method)}";
+    private static string MethodFieldName(IMethodSymbol method)
+    {
+        return $"_setup_{method.Name}{GetMethodTypeArity(method)}{GetMethodSignature(method)}";
+    }
 
     // Properties cannot be overloaded, so no signature needed - just the name
-    private static string PropertyFieldName(IPropertySymbol property) =>
-        $"_setup_{property.Name}";
+    private static string PropertyFieldName(IPropertySymbol property)
+    {
+        return $"_setup_{property.Name}";
+    }
 
     // Generates a unique signature string for an indexer based on its parameter types
-    internal static string GetIndexerSignature(IPropertySymbol indexer) =>
-        string.Join("_", indexer.Parameters.Select(p => SanitizeForIdentifier(FullTypeName(p.Type))));
+    internal static string GetIndexerSignature(IPropertySymbol indexer)
+    {
+        return string.Join("_", indexer.Parameters.Select(p => SanitizeForIdentifier(FullTypeName(p.Type))));
+    }
 
-    private static string IndexerFieldName(IPropertySymbol indexer) =>
-        $"_setup_Indexer_{GetIndexerSignature(indexer)}";
+    private static string IndexerFieldName(IPropertySymbol indexer)
+    {
+        return $"_setup_Indexer_{GetIndexerSignature(indexer)}";
+    }
 
     // Call count field name helpers (mirror setup field names with _callCount_ prefix)
-    private static string MethodCallCountFieldName(IMethodSymbol method) =>
-        $"_callCount_{method.Name}{GetMethodTypeArity(method)}{GetMethodSignature(method)}";
+    private static string MethodCallCountFieldName(IMethodSymbol method)
+    {
+        return $"_callCount_{method.Name}{GetMethodTypeArity(method)}{GetMethodSignature(method)}";
+    }
 
-    private static string PropertyCallCountFieldName(IPropertySymbol property) =>
-        $"_callCount_{property.Name}";
+    private static string PropertyCallCountFieldName(IPropertySymbol property)
+    {
+        return $"_callCount_{property.Name}";
+    }
 
-    private static string IndexerCallCountFieldName(IPropertySymbol indexer) =>
-        $"_callCount_Indexer_{GetIndexerSignature(indexer)}";
+    private static string IndexerCallCountFieldName(IPropertySymbol indexer)
+    {
+        return $"_callCount_Indexer_{GetIndexerSignature(indexer)}";
+    }
 
-    private static string TupleExpr(ImmutableArray<IParameterSymbol> parameters) =>
-        parameters.Length == 1
+    private static string TupleExpr(ImmutableArray<IParameterSymbol> parameters)
+    {
+        return parameters.Length == 1
             ? parameters[0].Name
             : $"({string.Join(", ", parameters.Select(p => p.Name))})";
+    }
 
     // Get type parameter list: "" or "<T>" or "<TKey, TValue>"
     private static string GetTypeParameterList(ImmutableArray<ITypeParameterSymbol> typeParams)
     {
-        if (typeParams.Length == 0) return "";
+        if (typeParams.Length == 0)
+        {
+            return "";
+        }
+
         return "<" + string.Join(", ", typeParams.Select(tp => tp.Name)) + ">";
     }
 
@@ -485,15 +525,40 @@ public class GyurmaGenerator : IIncrementalGenerator
         foreach (var tp in typeParams)
         {
             var constraints = new List<string>();
-            if (tp.HasReferenceTypeConstraint) constraints.Add("class");
-            if (tp.HasValueTypeConstraint) constraints.Add("struct");
-            if (tp.HasUnmanagedTypeConstraint) constraints.Add("unmanaged");
-            if (tp.HasNotNullConstraint) constraints.Add("notnull");
-            foreach (var c in tp.ConstraintTypes) constraints.Add(FullTypeName(c));
-            if (tp.HasConstructorConstraint) constraints.Add("new()");
+            if (tp.HasReferenceTypeConstraint)
+            {
+                constraints.Add("class");
+            }
+
+            if (tp.HasValueTypeConstraint)
+            {
+                constraints.Add("struct");
+            }
+
+            if (tp.HasUnmanagedTypeConstraint)
+            {
+                constraints.Add("unmanaged");
+            }
+
+            if (tp.HasNotNullConstraint)
+            {
+                constraints.Add("notnull");
+            }
+
+            foreach (var c in tp.ConstraintTypes)
+            {
+                constraints.Add(FullTypeName(c));
+            }
+
+            if (tp.HasConstructorConstraint)
+            {
+                constraints.Add("new()");
+            }
 
             if (constraints.Count > 0)
+            {
                 clauses.Add($"where {tp.Name} : {string.Join(", ", constraints)}");
+            }
         }
         return clauses.Count > 0 ? " " + string.Join(" ", clauses) : "";
     }
@@ -502,15 +567,22 @@ public class GyurmaGenerator : IIncrementalGenerator
     private static string GetFullyQualifiedNameWithTypeParams(INamedTypeSymbol type)
     {
         if (type.TypeParameters.Length == 0)
+        {
             return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        }
 
         // Build the fully qualified name with type parameter names
         var ns = type.ContainingNamespace;
         string prefix;
         if (ns == null || ns.IsGlobalNamespace)
+        {
             prefix = "global::";
+        }
         else
+        {
             prefix = $"global::{ns.ToDisplayString()}.";
+        }
+
         var typeParams = string.Join(", ", type.TypeParameters.Select(tp => tp.Name));
         return $"{prefix}{type.Name}<{typeParams}>";
     }
@@ -521,12 +593,16 @@ public class GyurmaGenerator : IIncrementalGenerator
         var parts = new List<string>();
 
         // Add Type for each type parameter
-        for (int i = 0; i < method.TypeParameters.Length; i++)
+        for (var i = 0; i < method.TypeParameters.Length; i++)
+        {
             parts.Add("Type");
+        }
 
         // Add parameter types - convert method type parameters to object
         foreach (var p in method.Parameters)
+        {
             parts.Add(GetParameterTypeForKey(p.Type, method.TypeParameters));
+        }
 
         return parts.Count == 1 ? parts[0] : $"({string.Join(", ", parts)})";
     }
@@ -536,7 +612,9 @@ public class GyurmaGenerator : IIncrementalGenerator
     {
         // If the type is a method type parameter, use object
         if (type is ITypeParameterSymbol tp && methodTypeParams.Contains(tp, SymbolEqualityComparer.Default))
+        {
             return "object";
+        }
 
         return FullTypeName(type);
     }
@@ -548,18 +626,24 @@ public class GyurmaGenerator : IIncrementalGenerator
 
         // Add typeof(T) for each type parameter
         foreach (var tp in method.TypeParameters)
+        {
             parts.Add($"typeof({tp.Name})");
+        }
 
         // Add parameter names
         foreach (var p in method.Parameters)
+        {
             parts.Add(p.Name);
+        }
 
         return parts.Count == 1 ? parts[0] : $"({string.Join(", ", parts)})";
     }
 
     // Get method type arity suffix for field names (to distinguish generic overloads)
-    private static string GetMethodTypeArity(IMethodSymbol method) =>
-        method.TypeParameters.Length > 0 ? $"_T{method.TypeParameters.Length}" : "";
+    private static string GetMethodTypeArity(IMethodSymbol method)
+    {
+        return method.TypeParameters.Length > 0 ? $"_T{method.TypeParameters.Length}" : "";
+    }
 
     // Walks the base type chain and collects abstract/virtual members that haven't been overridden
     private static IEnumerable<ISymbol> GetInheritedAbstractMembers(INamedTypeSymbol type)
@@ -570,9 +654,13 @@ public class GyurmaGenerator : IIncrementalGenerator
         foreach (var m in type.GetMembers())
         {
             if (m is IMethodSymbol ms && ms.OverriddenMethod != null)
+            {
                 overridden.Add(ms.OverriddenMethod);
+            }
             else if (m is IPropertySymbol ps && ps.OverriddenProperty != null)
+            {
                 overridden.Add(ps.OverriddenProperty);
+            }
         }
 
         var current = type.BaseType;
@@ -583,16 +671,26 @@ public class GyurmaGenerator : IIncrementalGenerator
                 if (member is IMethodSymbol m && m.MethodKind == MethodKind.Ordinary)
                 {
                     if ((m.IsAbstract || m.IsVirtual) && !overridden.Contains(m))
+                    {
                         yield return m;
+                    }
+
                     if (m.OverriddenMethod != null)
+                    {
                         overridden.Add(m.OverriddenMethod);
+                    }
                 }
                 else if (member is IPropertySymbol p)
                 {
                     if ((p.IsAbstract || p.IsVirtual) && !overridden.Contains(p))
+                    {
                         yield return p;
+                    }
+
                     if (p.OverriddenProperty != null)
+                    {
                         overridden.Add(p.OverriddenProperty);
+                    }
                 }
             }
             current = current.BaseType;

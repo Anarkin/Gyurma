@@ -1,6 +1,6 @@
+using Gyurma.Generators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Gyurma.Generators;
 using Xunit;
 
 namespace Gyurma.Tests;

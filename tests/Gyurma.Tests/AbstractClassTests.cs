@@ -20,7 +20,10 @@ public abstract class AbstractDerived : AbstractShape
 
 public abstract class AbstractPartialOverride : AbstractShape
 {
-    public sealed override double Area() => 0;
+    public sealed override double Area()
+    {
+        return 0;
+    }
     // Perimeter() and Validate() remain inherited from AbstractShape
 }
 
